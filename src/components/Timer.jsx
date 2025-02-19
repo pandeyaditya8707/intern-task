@@ -3,22 +3,31 @@ import { useEffect, useState } from "react";
 export default function Timer({ timeLimit, onTimeUp, currentQuestion }) {
   const [timeLeft, setTimeLeft] = useState(timeLimit);
 
+  // Reset timer when question changes
   useEffect(() => {
-    setTimeLeft(timeLimit); // ✅ Reset timer when a new question appears
-  }, [currentQuestion]);
+    setTimeLeft(timeLimit);
+  }, [timeLimit, currentQuestion]);
 
+  // Handle countdown and time-up
   useEffect(() => {
-    if (timeLeft === 0) {
-      onTimeUp(); // ✅ Move to the next question when time runs out
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setTimeLeft((prev) => prev - 1);
+    const timer = setInterval(() => {
+      setTimeLeft((prevTime) => {
+        if (prevTime <= 1) {
+          clearInterval(timer);
+          onTimeUp(); // Trigger the next question
+          return 0;
+        }
+        return prevTime - 1;
+      });
     }, 1000);
 
-    return () => clearTimeout(timer);
-  }, [timeLeft, onTimeUp]);
+    // Cleanup timer
+    return () => clearInterval(timer);
+  }, [currentQuestion, onTimeUp]);
 
-  return <p className="text-red-600 font-bold text-lg">⏳ {timeLeft} seconds left</p>;
+  return (
+    <p className="text-red-600 font-bold text-lg">
+      ⏳ {timeLeft} seconds left
+    </p>
+  );
 }

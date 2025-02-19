@@ -3,36 +3,8 @@ import { quizState } from "../recoil/quizAtom";
 import { scoreState } from "../recoil/scoreAtom";
 import Timer from "./Timer";
 import { motion } from "framer-motion";
-import { openDB } from "idb";
+import { saveAttempt, getLastAttempt } from "../db";
 import { useEffect } from "react";
-
-// Function to initialize IndexedDB
-async function initDB() {
-  return openDB("QuizDB", 1, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains("attempts")) {
-        db.createObjectStore("attempts", { keyPath: "id", autoIncrement: true });
-      }
-    },
-  });
-}
-
-// Function to save quiz attempt to IndexedDB
-async function saveAttempt(attempt) {
-  const db = await initDB();
-  const tx = db.transaction("attempts", "readwrite");
-  const store = tx.objectStore("attempts");
-  await store.add({ timestamp: Date.now(), attempt });
-}
-
-// Function to get last attempt from IndexedDB
-async function getLastAttempt() {
-  const db = await initDB();
-  const tx = db.transaction("attempts", "readonly");
-  const store = tx.objectStore("attempts");
-  const allAttempts = await store.getAll();
-  return allAttempts.length ? allAttempts[allAttempts.length - 1].attempt : null;
-}
 
 export default function Quiz() {
   const [quiz, setQuiz] = useRecoilState(quizState);
@@ -66,38 +38,70 @@ export default function Quiz() {
   const handleOptionClick = async (selectedOption) => {
     const isCorrect = selectedOption === currentQuestion.correct;
 
+    // Update score immediately with the correct result
     setScore((prev) => ({
       ...prev,
       correctAnswers: isCorrect ? prev.correctAnswers + 1 : prev.correctAnswers,
-      incorrectAnswers: isCorrect ? prev.incorrectAnswers : prev.incorrectAnswers + 1,
-      currentAttempt: [...prev.currentAttempt, { question: currentQuestion.text, selectedOption, correct: isCorrect }],
+      incorrectAnswers: !isCorrect ? prev.incorrectAnswers + 1 : prev.incorrectAnswers,
+      currentAttempt: [...prev.currentAttempt, { 
+        question: currentQuestion.text, 
+        selectedOption, 
+        correct: isCorrect 
+      }],
     }));
 
     moveToNextQuestion();
   };
 
   const moveToNextQuestion = () => {
+    // For timer expiration case
+    if (arguments.length === 0) {
+      setScore((prev) => ({
+        ...prev,
+        incorrectAnswers: prev.incorrectAnswers + 1,
+        currentAttempt: [...prev.currentAttempt, { 
+          question: currentQuestion.text, 
+          selectedOption: "No answer", 
+          correct: false 
+        }],
+      }));
+    }
+
     setQuiz((prev) => {
-      if (prev.currentQuestion + 1 < prev.questions.length) {
-        return { ...prev, currentQuestion: prev.currentQuestion + 1 };
-      } else {
-        return { ...prev, isCompleted: true };
+      const nextQuestion = prev.currentQuestion + 1;
+      
+      if (nextQuestion >= prev.questions.length) {
+        return {
+          ...prev,
+          isCompleted: true
+        };
       }
+      
+      return {
+        ...prev,
+        currentQuestion: nextQuestion,
+        isCompleted: false
+      };
     });
   };
 
   const restartQuiz = async () => {
-    // Save the latest attempt before resetting
-    await saveAttempt(score.currentAttempt);
+    try {
+      // Save the latest attempt before resetting
+      await saveAttempt(score.currentAttempt);
+      console.log("✅ Attempt saved successfully");
 
-    setScore((prev) => ({
-      correctAnswers: 0,
-      incorrectAnswers: 0,
-      pastAttempts: [...prev.pastAttempts, prev.currentAttempt],
-      currentAttempt: [],
-    }));
+      setScore((prev) => ({
+        correctAnswers: 0,
+        incorrectAnswers: 0,
+        pastAttempts: [...prev.pastAttempts, prev.currentAttempt],
+        currentAttempt: [],
+      }));
 
-    setQuiz({ questions: quiz.questions, currentQuestion: 0, isCompleted: false });
+      setQuiz({ questions: quiz.questions, currentQuestion: 0, isCompleted: false });
+    } catch (error) {
+      console.error("Error saving attempt:", error);
+    }
   };
 
   return (
